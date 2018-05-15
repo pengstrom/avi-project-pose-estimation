@@ -1,5 +1,6 @@
 import numpy as np
 from common import null
+from lmfit import minimize, Parameters
 
 
 class Homography:
@@ -10,26 +11,47 @@ class Homography:
         self.h = homography_dlt(srcpts, dstpts)
 
     def refine(self):
-        pass
+        guess = h_to_params(self.h)
+        res = minimize(residual, guess, args=(self.srcpts, self.dstpts))
+        self.h = params_to_h(res.params)
+        self.h /= self.h[2, 2]
+
+
+def h_to_params(h):
+    params = Parameters()
+    for i, hi in zip(range(8), h.reshape(-1)):
+        params.add('h' + str(i+1), hi)
+    return params
+
+
+def params_to_h(params):
+    vals = params.valuesdict()
+    h = np.zeros(9)
+    for i in range(8):
+        h[i] = vals['h' + str(i+1)]
+        h[8] += h[i]**2
+    return h.reshape(3, 3)
 
 
 def transform(m, h):
-    p = m.append(1)
+    # p = m.append(1)
+    p = np.array([m[0], m[1], 1])
     q = h @ p.reshape(-1, 1)
     q = q.reshape(-1)
     q /= q[2]
     return q[:2]
 
 
-def euclid_error(params, x, data):
-    print(x)
-    h9 = 0
-    for a in params:
-        h9 += a*a
-    h = params.append(h9).reshape(3, 3)
+def residual(params, srcpts, dstpts):
+    n = len(srcpts)
+    h = params_to_h(params)
 
-    model = transform(x, h)
-    return np.float64([data[0]-model[0], data[1]-model[1]])
+    res = np.zeros((n, 2))
+    for i, src, dst in zip(range(n), srcpts, dstpts):
+        clc = transform(src, h)
+        res[i] = clc - dst
+
+    return res.reshape(-1)
 
 
 def homography_dlt(srcpts, dstpts):
@@ -45,22 +67,25 @@ def homography_lhs(srcpts, dstpts):
     assert(len(srcpts) == len(dstpts))
     lhs = np.zeros((2*n, 9))
 
-    for i in range(0, n):
-        x, y = srcpts[i]
-        u, v = dstpts[i]
+    for i, src, dst in zip(range(n), srcpts, dstpts):
+        x, y = src
+        u, v = dst
 
-        lhs[i*2, 3] = -x
-        lhs[i*2, 4] = -y
-        lhs[i*2, 5] = -1
-        lhs[i*2, 6] = v * x
-        lhs[i*2, 7] = v * y
-        lhs[i*2, 8] = v
+        lhs[i*2, 3:9] = [-x, -y, -1, v * x, v * y, v]
+        # lhs[i*2, 3] = -x
+        # lhs[i*2, 4] = -y
+        # lhs[i*2, 5] = -1
+        # lhs[i*2, 6] = v * x
+        # lhs[i*2, 7] = v * y
+        # lhs[i*2, 8] = v
 
-        lhs[i*2+1, 0] = -x
-        lhs[i*2+1, 1] = -y
-        lhs[i*2+1, 2] = -1
-        lhs[i*2+1, 6] = u * x
-        lhs[i*2+1, 7] = u * y
-        lhs[i*2+1, 8] = u
+        lhs[i*2+1, :3] = [-x, -y, -1]
+        lhs[i*2+1, 6:9] = [u * x, u * y, u]
+        # lhs[i*2+1, 0] = -x
+        # lhs[i*2+1, 1] = -y
+        # lhs[i*2+1, 2] = -1
+        # lhs[i*2+1, 6] = u * x
+        # lhs[i*2+1, 7] = u * y
+        # lhs[i*2+1, 8] = u
 
     return lhs

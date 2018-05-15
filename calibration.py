@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 from common import null
 
 
@@ -22,9 +23,10 @@ class Camera:
         t = self.la * self.invA @ h3
 
         # The [R t] 3x4 matrix
-        ex = np.float32([r1, r2, r3, t]).T
+        R = np.float32([r1, r2, r3]).T
+        rvecs = cv2.Rodrigues(R)
 
-        return ex
+        return rvecs, t
 
 
 def vij(h, i, j):

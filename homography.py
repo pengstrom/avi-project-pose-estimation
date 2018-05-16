@@ -5,12 +5,16 @@ from lmfit import minimize, Parameters
 
 class Homography:
     def __init__(self, srcpts, dstpts):
-        assert (len(srcpts) == len(dstpts))
+        assert(srcpts.shape[0] == dstpts.shape[0])
+        assert(srcpts.shape[1] == 2)
+        assert(dstpts.shape[1] == 2)
+
         self.srcpts = srcpts
         self.dstpts = dstpts
         self.h = homography_dlt(srcpts, dstpts)
 
     def refine(self):
+        print('refining...')
         guess = h_to_params(self.h)
         res = minimize(residual, guess, args=(self.srcpts, self.dstpts))
         self.h = params_to_h(res.params)
@@ -18,6 +22,7 @@ class Homography:
 
 
 def h_to_params(h):
+    assert(h.shape == (3, 3))
     params = Parameters()
     for i, hi in zip(range(8), h.reshape(-1)):
         params.add('h' + str(i+1), hi)
@@ -34,6 +39,8 @@ def params_to_h(params):
 
 
 def transform(m, h):
+    assert(m.shape == (2,))
+    assert(h.shape == (3, 3))
     # p = m.append(1)
     p = np.array([m[0], m[1], 1])
     q = h @ p.reshape(-1, 1)
@@ -55,6 +62,10 @@ def residual(params, srcpts, dstpts):
 
 
 def homography_dlt(srcpts, dstpts):
+    assert(srcpts.shape[0] == dstpts.shape[0])
+    assert(srcpts.shape[1] == 2)
+    assert(dstpts.shape[1] == 2)
+
     a = homography_lhs(srcpts, dstpts)
     h = null(a)
     h /= h[-1]
@@ -63,8 +74,13 @@ def homography_dlt(srcpts, dstpts):
 
 
 def homography_lhs(srcpts, dstpts):
+    assert(srcpts.shape[0] == dstpts.shape[0])
+    assert(srcpts.shape[1] == 2)
+    assert(dstpts.shape[1] == 2)
+
     n = len(srcpts)
     assert(len(srcpts) == len(dstpts))
+
     lhs = np.zeros((2*n, 9))
 
     for i, src, dst in zip(range(n), srcpts, dstpts):

@@ -2,27 +2,32 @@ import cv2
 import numpy as np
 import glob
 from calibration import Camera
-import matplotlib
 
 # Load previously saved data
 with np.load('camera.npz') as X:
-    cv_mtx, dist, cv_rvecs, cv_tvecs = [X[i] for i in ('mtx', 'dist', 'rvecs', 'tvecs')]
+    cv_mtx, dist, _, _ = [X[i] for i in ('mtx', 'dist', 'rvecs', 'tvecs')]
 
 
-def draw(img, corners, imgpts):
+def draw(img, imgpts, color):
     imgpts = np.int32(imgpts).reshape(-1, 2)
 
+    output = img.copy()
+    overlay = img.copy()
+
     # draw ground floor in green
-    img = cv2.drawContours(img, [imgpts[:4]], -1, (0, 255, 0), -3)
+    cv2.drawContours(overlay, [imgpts[:4]], -1, color, -3)
+    cv2.addWeighted(overlay, 0.60, output, 0.40, 0, output)
 
     # draw pillars in blue color
     for i, j in zip(range(4), range(4, 8)):
-        img = cv2.line(img, tuple(imgpts[i]), tuple(imgpts[j]), (255), 3)
+        cv2.line(overlay, tuple(imgpts[i]), tuple(imgpts[j]), color, 3)
+        cv2.addWeighted(overlay, 0.60, output, 0.40, 0, output)
 
     # draw top layer in red color
-    img = cv2.drawContours(img, [imgpts[4:]], -1, (0, 0, 255), 3)
+    cv2.drawContours(overlay, [imgpts[4:]], -1, color, 3)
+    cv2.addWeighted(overlay, 0.60, output, 0.40, 0, output)
 
-    return img
+    return output
 
 
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -55,21 +60,9 @@ for fname in images:
                                     criteria)
         imgpts.append(corners2.reshape(-1, 2))
 
+# Calibrate camera and refine
 camera = Camera(np.array(objpts), np.array(imgpts))
-
-# camera.K = cv_mtx
-# camera.invK = np.linalg.inv(cv_mtx)
-
-# camera.tvecs = cv_tvecs.reshape(-1, 3)
-# camera.rvecs = cv_rvecs.reshape(-1, 3)
-
-tvec_diff = [x/y for x, y in zip(camera.tvecs.reshape(-1), cv_tvecs.reshape(-1))]
-avgmean = np.mean(tvec_diff)
-# camera.tvecs /= avgmean
-# matplotlib.pyplot.bar(range(len(tvec_diff)), tvec_diff)
-# matplotlib.pyplot.show()
-
-camera.refine()
+# camera.refine()
 
 print('Intrinsics')
 print('OpenCV intrinsics:')
@@ -78,8 +71,6 @@ print('My intrinsics:')
 print(camera.K)
 print('Error:')
 print(camera.K - cv_mtx)
-
-print(camera.s)
 
 print('Extrinsics')
 for objp, imgp, img, h, rvec, tvec in zip(objpts, imgpts, imgs, camera.hs,
@@ -90,25 +81,27 @@ for objp, imgp, img, h, rvec, tvec in zip(objpts, imgpts, imgs, camera.hs,
                                                 cv_mtx, dist)
 
     print('Opencv rvec:')
-    print(cv_rvec)
+    print(cv_rvec.reshape(-1))
     print('My rvec:')
     print(rvec)
     print('Error:')
     print(rvec - cv_rvec.reshape(-1))
     print('Opencv tvec:')
-    print(cv_tvec)
+    print(cv_tvec.reshape(-1))
     print('My tvec:')
     print(tvec)
     print('Error:')
     print(tvec - cv_tvec.reshape(-1))
 
-    # project 3D points to image plane
+    # project 3D points to image plane using OpenCV
     cv_imgpts, jac = cv2.projectPoints(axis, cv_rvec, cv_tvec, cv_mtx, dist)
     
+    # project 3D points to image plane using my implementation
     my_imgpts = camera.transform(rvec, tvec, axis)
 
-    # img = draw(img, corners2, cv_imgpts)
-    img = draw(img, corners2, my_imgpts)
+    # Draw test cube
+    img = draw(img, cv_imgpts, (255,0,0))
+    img = draw(img, my_imgpts, (0,255,0))
     cv2.imshow('img', img)
     k = cv2.waitKey(0) & 0xff
     if k == 's':

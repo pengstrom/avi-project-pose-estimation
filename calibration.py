@@ -7,7 +7,9 @@ from homography import Homography
 import pdb
 
 
+# Camera container
 class Camera:
+    # Initialize camera with sets of correspondences
     def __init__(self, srcpts, dstpts):
         assert(srcpts.shape[2] == 3)
         assert(dstpts.shape[2] == 2)
@@ -31,7 +33,7 @@ class Camera:
         self.hs = hs
 
         # Estimate intrinsics
-        self.K, self.s = camera_dlt(hs)
+        self.K = camera_dlt(hs)
         self.invK = np.linalg.inv(self.K)
 
         # Extrinsics for each image
@@ -46,8 +48,7 @@ class Camera:
         self.rvecs = rvecs
         self.tvecs = tvecs
 
-        # self.refine()
-
+    # Refine the intrinsics and extrinsics for calibration images
     def refine(self):
         n = self.n
         m = self.m
@@ -70,34 +71,39 @@ class Camera:
         self.rvecs = params_to_rvecs(res.params, m)
         self.tvecs = params_to_tvecs(res.params, m)
 
+    # Estimate extrinsics for given homography
     def extrinsics(self, h):
-        assert(h.shape == (3, 3))
+        return camera_extrinsics(self.invK, h)
 
-        # Columns of H
-        h1 = h[:, 0]
-        h2 = h[:, 1]
-        h3 = h[:, 2]
-
-        self.s = 1/np.linalg.norm(self.invK @ h1)
-
-        # Extrinsics
-        r1 = self.s * self.invK @ h1
-        r2 = self.s * self.invK @ h2
-        r3 = np.cross(r1, r2)
-        t = self.s * self.invK @ h3
-
-        # Convert to vector
-        R = np.float32([r1, r2, r3]).T
-        rvec, _ = cv2.Rodrigues(R)
-
-        # pdb.set_trace()
-
-        return rvec.reshape(-1), t
-
+    # Project world point to sceen space
     def transform(self, rvec, tvec, ms):
         return camera_transform(self.K, rvec, tvec, ms)
 
 
+def camera_extrinsics(invK, h):
+    assert(h.shape == (3, 3))
+
+    # Columns of H
+    h1 = h[:, 0]
+    h2 = h[:, 1]
+    h3 = h[:, 2]
+
+    s = 1/np.linalg.norm(invK @ h1)
+
+    # Extrinsics
+    r1 = s * invK @ h1
+    r2 = s * invK @ h2
+    r3 = np.cross(r1, r2)
+    t = s * invK @ h3
+
+    # Convert to vector
+    R = np.float32([r1, r2, r3]).T
+    rvec, _ = cv2.Rodrigues(R)
+
+    return rvec.reshape(-1), t
+
+
+# Project world point to sceen space
 def camera_transform(K, rvec, tvec, ms):
     assert(K.shape == (3, 3))
     assert(rvec.shape == (3,))
@@ -106,7 +112,7 @@ def camera_transform(K, rvec, tvec, ms):
 
     n = len(ms)
 
-    # Constuct camera matrix
+    # Constuct camera matrix C
     R, _ = cv2.Rodrigues(rvec)
     Rt = np.zeros((3, 4))
     Rt[:, :3] = R
@@ -128,12 +134,14 @@ def camera_transform(K, rvec, tvec, ms):
     return qs
 
 
+# Residuals of every correspondences after transformation
 def residual(params, srcset, dstset, n, m):
     params.valuesdict()
     K = params_to_K(params)
     rvecs = params_to_rvecs(params, m)
     tvecs = params_to_tvecs(params, m)
 
+    # Calculate the difference between true and estimated image point
     res = np.zeros((m, n, 2))
     for j in range(m):
         clcs = camera_transform(K, rvecs[j], tvecs[j], srcset[j])
@@ -142,10 +150,10 @@ def residual(params, srcset, dstset, n, m):
         res[j, :, :] = diff
 
     out = res.reshape(-1)
-    print(sum([x*x for x in out]))
     return out
 
 
+# Add intrinsic parameters
 def add_K(params, K):
     params.add('a', K[0, 0])
     params.add('c', K[0, 1])
@@ -154,6 +162,7 @@ def add_K(params, K):
     params.add('v0', K[1, 2])
 
 
+# Intrinsic parameters from parameters
 def params_to_K(params):
     K = np.zeros((3, 3))
     K[0, 0] = params['a']
@@ -165,6 +174,7 @@ def params_to_K(params):
     return K
 
 
+# Add extrinsic R
 def add_rvecs(params, rvecs, m):
     for j, rvec in zip(range(m), rvecs):
         for i, r in zip(range(3), rvec):
@@ -172,6 +182,7 @@ def add_rvecs(params, rvecs, m):
             params.add(key, r)
 
 
+# Extrinsic R from parameters
 def params_to_rvecs(params, m):
     rvecs = np.zeros((m, 3))
     for j in range(m):
@@ -182,12 +193,14 @@ def params_to_rvecs(params, m):
     return rvecs
 
 
+# Add extrinsic t
 def add_tvecs(params, tvecs, m):
     for j, tvec in zip(range(m), tvecs):
         for i, t in zip(range(3), tvec):
             params.add('tvec' + str(j+1) + '_' + str(i+1), t)
 
 
+# Extrinsic t from parameters
 def params_to_tvecs(params, m):
     tvecs = np.zeros((m, 3))
     for j in range(m):
@@ -197,6 +210,7 @@ def params_to_tvecs(params, m):
     return tvecs
 
 
+# Helper v_{ij}, see section 2.1 of the report
 def vij(h, i, j):
     assert(h.shape == (3, 3))
 
@@ -210,6 +224,7 @@ def vij(h, i, j):
     return np.float32([v1, v2, v3, v4, v5, v6])
 
 
+# Estimate camera intrinsics via direct linear transform
 def camera_dlt(hs):
     assert(hs.shape[1] == 3)
     assert(hs.shape[2] == 3)
@@ -220,6 +235,7 @@ def camera_dlt(hs):
     return camera(b)
 
 
+# Intrinsics from B, see section 2.1 of the report
 def camera(b):
     assert(b.shape == (6,))
     b11, b12, b22, b13, b23, b33 = b
@@ -241,9 +257,10 @@ def camera(b):
     K[1, 2] = v0
     K[2, 2] = 1
 
-    return K, s
+    return K
 
 
+# Construct LHS matrix V
 def camera_lhs(hs):
     assert(hs.shape[1] == 3)
     assert(hs.shape[2] == 3)

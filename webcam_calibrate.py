@@ -36,6 +36,9 @@ print('Found {} good images out of {}!'.format(len(objlist), len(images)))
 objset = np.array(objlist)
 imgset = np.array(imglist)
 
+print('Saving data...')
+np.savez('chess_data', objset=objset, imgset=imgset)
+
 camera = Camera(objset, imgset)
 camera.refine()
 

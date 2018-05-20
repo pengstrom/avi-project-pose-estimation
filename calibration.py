@@ -64,7 +64,19 @@ class Camera:
         add_rvecs(params, rvecs, m)
         add_tvecs(params, tvecs, m)
 
-        res = minimize(residual, params, args=(srcset, dstset, n, m))
+        parms = []
+        res = minimize(residual, params, args=(srcset, dstset, n, m, parms))
+
+        n = len(parms)
+        Ks = np.zeros((n, 3, 3))
+        rvecss = np.zeros((n, 3))
+        tvecss = np.zeros((n, 3))
+        for i, (Kk, rvecc, tvecc) in zip(range(n), parms):
+            Ks[i] = Kk
+            rvecss[i] = rvecc
+            tvecss[i] = tvecc
+
+        np.savez('params_data_data', K=Ks, rvecs=rvecss, tvecs=tvecss)
 
         self.K = params_to_K(res.params)
         self.invK = np.linalg.inv(self.K)
@@ -135,11 +147,13 @@ def camera_transform(K, rvec, tvec, ms):
 
 
 # Residuals of every correspondences after transformation
-def residual(params, srcset, dstset, n, m):
+def residual(params, srcset, dstset, n, m, parms):
     params.valuesdict()
     K = params_to_K(params)
     rvecs = params_to_rvecs(params, m)
     tvecs = params_to_tvecs(params, m)
+
+    parms.append((K, rvecs[0], tvecs[0]))
 
     # Calculate the difference between true and estimated image point
     res = np.zeros((m, n, 2))

@@ -39,15 +39,20 @@ def draw(img, imgpts):
 
 
 while(1):
-    ret, frame = cap.read()
+    ret, frameflip = cap.read()
+
+    frame = cv2.flip(frameflip, 1)
 
     gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
 
-    ret, corners = cv2.findChessboardCorners(gray, (7, 7))
+    ret, corners = cv2.findChessboardCorners(gray, (7, 7),
+                                             flags=(cv2.CALIB_CB_FAST_CHECK + cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE))
 
     if ret:
-        corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1),
-                                    criteria)
+        # corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1),
+        #                             criteria)
+
+        corners2 = corners
 
         dstpts = corners2.reshape(-1, 2)
 

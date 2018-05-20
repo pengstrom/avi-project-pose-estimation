@@ -1,65 +1,62 @@
 import numpy as np
 import cv2
 # from termcolors import cprint
-from homography import Homography
+from homography import Homography, transform
+
+with np.load('chess_data.npz') as X:
+    objset, imgset = [X[i] for i in ('objset', 'imgset')]
 
 
-# def bprint(x):
-#     return cprint(x, attrs=['bold'])
+(m, n, _) = objset.shape
 
-# IMGSIZE = 512
-# SCALE = 0.8
+cv_errs = np.zeros((m, n))
+my_errs = np.zeros((m, n))
+my_refined_errs = np.zeros((m, n))
 
+objlist = np.zeros((m, n, 2))
+objlist = objset[:, :, :2]
 
-# def draw_poly(img, pts, color):
-#    vs = np.zeros((len(pts), 2), np.int32)
-#    for v, p in zip(vs, pts):
-#        v[0] = np.round(pts[0]*IMGSIZE*SCALE/2 + IMGSIZE/2)
-#        v[1] = np.round(pts[1]*IMGSIZE*SCALE/2 + IMGSIZE/2)
-#    vs = vs.reshape(-1, 1, 2)
-#    cv2.polylines(img, vs, True, color)
+for k, srcpts, dstpts in zip(range(m), objlist, imgset):
+    h_cv, _ = cv2.findHomography(srcpts, dstpts)
+    cv_dst = cv2.perspectiveTransform(srcpts.reshape(-1, 1, 2), h_cv)
+    diff = cv_dst.reshape(-1, 2) - dstpts
+    cv_errs[k] = np.linalg.norm(diff, axis=1)
 
+    hgraf = Homography(srcpts, dstpts)
+    for i, src, dst in zip(range(n), srcpts, dstpts):
+        my_dst = transform(src, hgraf.h)
+        my_errs[k, i] = np.linalg.norm(my_dst - dst)
 
-# def draw_img(srcpts, dstpts, h, h_cv):
-#    img = np.zeros((IMGSIZE, IMGSIZE, 3), np.uint8)
-#    draw_poly(img, srcpts, (255, 0, 0))
-#    draw_poly(img, dstpts, (0, 255, 0))
-
-
-print('Homography test')
-
-# Source points
-print('Source points')
-srcpts = np.float64([[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 0]])
-print(srcpts)
+    hgraf.refine()
+    for i, src, dst in zip(range(n), srcpts, dstpts):
+        my_dst = transform(src, hgraf.h)
+        my_refined_errs[k, i] = np.linalg.norm(my_dst - dst)
 
 
-# Destination points
-print('Destination points')
-dstpts = np.float64([[-0.5, -0.5], [0.52, -0.4],
-                     [0.5, 0.5], [-0.5, 0.5], [0, 0]])
-for dst in dstpts:
-    dst[0] = np.round(dst[0] + np.random.normal(scale=0.05), 2)
-    dst[1] = np.round(dst[1] + np.random.normal(scale=0.05), 2)
+cv_mean = np.mean(cv_errs.reshape(-1))
+cv_std = np.std(cv_errs.reshape(-1))
 
-# cprint(dstpts, 'green')
-print(dstpts)
+my_mean = np.mean(my_errs.reshape(-1))
+my_std = np.std(my_errs.reshape(-1))
 
-h_cv, _ = cv2.findHomography(srcpts, dstpts)
+my_refined_mean = np.mean(my_refined_errs.reshape(-1))
+my_refined_std = np.std(my_refined_errs.reshape(-1))
 
-hgraf = Homography(srcpts, dstpts)
-hgraf.refine()
-h = hgraf.h
+print('Homography evaluation')
 
-# cv2.imshow(draw_img(srcpts, dstpts, h, h_cv))
+print('\nOpenCV\n')
 
-print("OpenCV solution:")
-# cprint(h_cv, 'yellow')
-print(h_cv)
+print('Mean error:')
+print(cv_mean)
 
-print("My solution:")
-print(h)
+print('\nUnrefined\n')
 
-print("Difference:")
-# cprint(h-h_cv, 'red')
-print(h-h_cv)
+print('Mean error:')
+print(my_mean)
+
+print('\nRefined\n')
+
+print('Mean error:')
+print(my_refined_mean)
+
+np.savez('compare_hom2', cv_mean=cv_mean, cv_std=cv_std, my_mean=my_mean, my_std=my_std, my_refined_mean=my_refined_mean, my_refined_std=my_refined_std)

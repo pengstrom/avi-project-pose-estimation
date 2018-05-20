@@ -53,6 +53,7 @@ for fname in images:
 
     # If found, add object points, image points (after refining them)
     if ret:
+        print(fname)
         objpts.append(objp)
         imgs.append(img)
 
@@ -62,7 +63,14 @@ for fname in images:
 
 # Calibrate camera and refine
 camera = Camera(np.array(objpts), np.array(imgpts))
-# camera.refine()
+
+np.savez('camera_calib_unrefined', K=camera.K, invK=camera.invK, rvecs=camera.rvecs, tvecs=camera.tvecs)
+
+camera.refine()
+
+np.savez('camera_calib_refined', K=camera.K, invK=camera.invK, rvecs=camera.rvecs, tvecs=camera.tvecs)
+
+camera.quit()
 
 print('Intrinsics')
 print('OpenCV intrinsics:')
